@@ -1,0 +1,6 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+data/fetched/*.csv
+data/monthly_pageviews.csv
