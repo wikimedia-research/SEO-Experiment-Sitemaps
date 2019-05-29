@@ -6,7 +6,7 @@ library(lubridate)
 
 query <- paste0(read_lines("data/query.hql"), collapse = "\n")
 
-today <- lubridate::today()
+# today <- lubridate::today()
 base_dir <- "data/fetched"
 fs::dir_create(base_dir)
 output_filename <- fs::path(base_dir, "{date}.csv")
@@ -25,7 +25,7 @@ fetch <- function(date) {
   return(invisible(NULL))
 }
 
-c(start_date, end_date) %<-% as.Date(c("2016-02-05", "2019-02-06"))
+c(start_date, end_date) %<-% as.Date(c("2016-02-05", "2019-05-23"))
 dates <- seq(start_date, end_date, by = "day")
 
 purrr::walk(dates, fetch)

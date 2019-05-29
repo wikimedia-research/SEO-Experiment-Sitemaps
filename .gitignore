@@ -4,3 +4,4 @@
 .Ruserdata
 data/fetched/*.csv
 data/monthly_pageviews.csv
+causal_impact_analysis.rds
