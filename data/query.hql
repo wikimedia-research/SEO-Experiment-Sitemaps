@@ -1,7 +1,7 @@
 USE wmf;
 SELECT
   CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) AS date,
-  IF(project IN('id.wikipedia', 'ko.wikipedia', 'nl.wikipedia', 'pa.wikipedia', 'pt.wikipedia'), 'treatment', 'control') AS test_group,
+  IF(project IN('id.wikipedia', 'ko.wikipedia', 'nl.wikipedia', 'nds-nl.wikipedia', 'pa.wikipedia', 'pnb.wikipedia, 'pt.wikipedia'), 'treatment', 'control') AS test_group,
   project,
   IF(access_method = 'mobile web', 'mobile', 'desktop') AS site_version,
   IF(referer_class = 'external (search engine)', 'search', referer_class) AS referrer,

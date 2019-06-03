@@ -9,12 +9,12 @@ fit_bsts <- function(y, x, dyn_reg = FALSE, iters = 1000, ...) {
   ss <- AddLocalLevel(list(), y)
   ss <- ss %>%
     AddSeasonal(y, nseasons = 7, season.duration = 1) %>% # day of week
-    # AddSeasonal(y, nseasons = 52, season.duration = 7) %>% # week of year
+    AddSeasonal(y, nseasons = 52, season.duration = 7) %>% # week of year
     AddAutoAr(y, lags = 5) %>%
     AddRegressionHoliday(y, holiday.list = list(
       NamedHoliday("Christmas"), NamedHoliday("NewYearsDay")
     )) %>%
-    AddMonthlyAnnualCycle(y) # yearly seasonality
+    AddMonthlyAnnualCycle(y) # month of year
 
   if (dyn_reg) {
     ss <- AddDynamicRegression(ss, y ~ x)

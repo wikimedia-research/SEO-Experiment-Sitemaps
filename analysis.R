@@ -29,7 +29,7 @@ analyze_causal_impact <- function(platform) {
     t %>%
     as.data.frame %>%
     set_colnames(c("lower_bound", "expected", "upper_bound")) %>%
-    cbind(date = index(yy), actual = as.numeric(yy))
+    cbind(date = index(yy), actual = as.numeric(yy), period = "pre-intervention")
 
   impact_estimation <- as.data.frame(y[impact_analysis_dates]) %>%
     {
@@ -39,13 +39,8 @@ analyze_causal_impact <- function(platform) {
     } %>%
     setNames(c("actual", "date")) %>%
     dplyr::left_join(impact_predictions, by = "date") %>%
-    dplyr::mutate(
-      impact = actual - expected,
-      impact_lower = actual - lower_bound,
-      impact_upper = actual - upper_bound,
-      relative = (actual - expected) / actual
-    ) %>%
-    dplyr::bind_rows(fitted_values)
+    dplyr::mutate(period = "post-intervention") %>%
+    dplyr::bind_rows(fitted_values, .)
 
   return(list(
     platform = platform,
@@ -54,19 +49,27 @@ analyze_causal_impact <- function(platform) {
   ))
 }
 
+my_theme <- function() {
+  hrbrthemes::theme_ipsum(
+    "Source Sans Pro", 12,
+    axis_title_size = 12,
+    subtitle_size = 14,
+    plot_title_size = 16,
+    caption_size = 10
+  )
+}
+
 visualize_causal_impact <- function(ci_analysis, mape) {
 
-  my_theme <- function() {
-    hrbrthemes::theme_ipsum(
-      "Source Sans Pro", 12,
-      axis_title_size = 12,
-      subtitle_size = 14,
-      plot_title_size = 16,
-      caption_size = 10
-    )
-  }
-
-  impact_estimation <- ci_analysis$estimates
+  impact_estimation <- dplyr::mutate(
+    ci_analysis$estimates,
+    impact = actual - expected,
+    impact_lower = actual - lower_bound,
+    impact_upper = actual - upper_bound,
+    relative = (actual - expected) / expected,
+    relative_lower = (actual - lower_bound) / lower_bound,
+    relative_upper = (actual - upper_bound) / upper_bound
+  )
 
   avg <- impact_estimation %>%
     dplyr::filter(date >= "2018-11-15") %>%
@@ -78,7 +81,7 @@ visualize_causal_impact <- function(ci_analysis, mape) {
   platform <- ci_analysis$platform
   Platform <- polloi::capitalize_first_letter(platform)
   treatment_wikis <- "Dutch, Indonesian, Korean, Portuguese, and Punjabi Wikipedias"
-  control_wikis <- "Bhojpuri, Catalan, Cherokee, Dutch, French, Kalmyk, Kazakh, Western Punjabi, and Yoruba Wikipedias"
+  control_wikis <- "Bhojpuri, Catalan, Cherokee, French, Kalmyk, Kazakh, and Yoruba Wikipedias"
 
   p1 <- ggplot(impact_estimation, aes(x = date)) +
     geom_vline(xintercept = as.Date("2018-11-15"), linetype = "dashed") +
@@ -95,22 +98,22 @@ visualize_causal_impact <- function(ci_analysis, mape) {
       caption = sprintf("Median MAPE from 10-fold nested CV of pre-sitemaps %s traffic: %.2f%%", platform, 100 * mape)
     ) +
     my_theme()
-  p2 <- ggplot(impact_estimation, aes(x = date)) +
+  p2 <- ggplot(dplyr::filter(impact_estimation, date >= "2018-11-15"), aes(x = date)) +
     geom_hline(yintercept = 0) +
     geom_ribbon(aes(ymin = impact_lower, ymax = impact_upper), fill = "#3366cc", alpha = 0.2) +
     geom_line(aes(y = impact), color = "#3366cc", size = 1.1) +
     scale_y_continuous(labels = . %>% paste0(., "M"), minor_breaks = NULL) +
-    coord_cartesian(xlim = as.Date(c("2018-11-15", "2019-01-15"))) +
     labs(
       x = "Date", y = "Pageviews", title = paste("Estimated absolute impact; average:", avg["impact_avg"]),
       subtitle = glue("Counterfactual model of {platform} search-referred traffic based on {control_wikis} as control set")
     ) +
     my_theme()
-  p3 <- ggplot(impact_estimation, aes(x = date)) +
+  p3 <- ggplot(dplyr::filter(impact_estimation, date >= "2018-11-15"), aes(x = date)) +
     geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_ribbon(aes(ymin = relative_lower, ymax = relative_upper), fill = "#00af89", alpha = 0.2) +
     geom_line(aes(y = relative), color = "#00af89", size = 1.1) +
     scale_y_continuous(label = scales::percent_format(1), minor_breaks = NULL) +
-    coord_cartesian(xlim = as.Date(c("2018-11-15", "2019-01-15"))) +
+    coord_cartesian(ylim = c(-0.5, 0.5)) +
     labs(x = "Date", y = "Relative difference",
          title = paste("Estimated relative impact; average:", avg["relative_avg"])) +
     my_theme()
@@ -119,10 +122,46 @@ visualize_causal_impact <- function(ci_analysis, mape) {
     p2 + p3 + plot_layout(ncol = 2)
   ) + plot_layout(ncol = 1)
 
-  ggsave(glue("causal_impact-{platform}.png"), p, width = 16, height = 12, dpi = 300)
+  fs::dir_create("figures")
+  ggsave(glue("figures/causal_impact-{platform}.png"), p, width = 16, height = 12, dpi = 300)
+
+}
+
+visualize_contributions <- function(ci_analysis) {
+  state_contribs <- ci_analysis$model$state.contributions %>%
+    apply(c(2, 3), quantile, probs = c(0.25, 0.5, 0.75))
+  states <- 1:(dim(state_contribs)[2]) %>%
+    set_names(snakecase::to_snake_case(dimnames(state_contribs)[[2]]))
+  state_contribs <- purrr::map_dfr(states, function(state) {
+    output <- as.data.frame(t(state_contribs[, state, ]))
+    names(output) <- c("lower", "middle", "upper")
+    output$date <- ci_analysis$estimates$date[1:nrow(output)]
+    return(output)
+  }, .id = "state")
+
+  p <- ggplot(state_contribs, aes(x = date)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+    geom_line(aes(y = middle)) +
+    facet_wrap(~ state, scales = "free_y", ncol = 1) +
+    scale_x_date(date_breaks = "1 month", date_labels = "%b\n%Y", minor_breaks = NULL) +
+    scale_y_continuous(minor_breaks = NULL) +
+    coord_cartesian(xlim = as.Date(c("2016-02-01", "2018-12-01"))) +
+    labs(
+      x = NULL, y = "Pageviews (in millions)",
+      title = "Per-state contributions",
+      subtitle = "With 50% Credible Intervals"
+    ) +
+    my_theme()
+
+  fs::dir_create("figures")
+  ggsave(glue("figures/state_contributions-{ci_analysis$platform}.png"), p, width = 24, height = 12, dpi = 300)
 
 }
 
 causal_impact_analysis <- purrr::map(c("mobile", "desktop"), analyze_causal_impact)
 readr::write_rds(causal_impact_analysis, "causal_impact_analysis.rds", compress = "gz")
-purrr::walk2(causal_impact_analysis, c(mobile = 0.03898, desktop = 0.06067), visualize_causal_impact)
+
+causal_impact_analysis <- readr::read_rds("causal_impact_analysis.rds")
+# ci_analysis <- causal_impact_analysis[[1]]
+purrr::walk2(causal_impact_analysis, c(mobile = 0.04375, desktop = 0.07673), visualize_causal_impact)
+purrr::walk(causal_impact_analysis, visualize_contributions)
